@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { Shield, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Shield, Loader2, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -74,6 +74,26 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const busyRef = useRef(false) // prevents double-fire
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+
+  // Capture the PWA install prompt
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const result = await installPrompt.userChoice
+    if (result.outcome === 'accepted') {
+      setInstallPrompt(null)
+    }
+  }
 
   const doLogin = async (loginEmail: string, loginPassword: string) => {
     if (busyRef.current) return
@@ -179,6 +199,20 @@ export default function LoginPage() {
               </Button>
             </div>
           </div>
+
+          {installPrompt && (
+            <div className="mt-4 pt-4 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={handleInstall}
+              >
+                <Download className="h-4 w-4" />
+                Install App
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
