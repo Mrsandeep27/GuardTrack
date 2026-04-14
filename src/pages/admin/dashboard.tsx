@@ -38,7 +38,7 @@ export default function AdminDashboard() {
         <p className="text-muted-foreground text-sm mt-1">Real-time guard monitoring</p>
       </div>
 
-      <StatsCards {...stats} />
+      <StatsCards {...stats} guards={guards} />
 
       <GuardList guards={guards} loading={loading} />
     </div>
