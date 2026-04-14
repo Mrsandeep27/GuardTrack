@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useCallback } from 'react'
+import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 
 interface Guard {
@@ -28,23 +29,74 @@ interface GuardWithStatus extends Guard {
   monthly_hours: number
 }
 
-export function useGuards() {
-  const [guards, setGuards] = useState<GuardWithStatus[]>([])
-  const [loading, setLoading] = useState(true)
+interface AttendanceWithProfile {
+  id: string
+  guard_id: string
+  check_in: string
+  check_out: string | null
+  check_in_lat: number | null
+  check_in_lng: number | null
+  check_out_lat: number | null
+  check_out_lng: number | null
+  total_hours: number | null
+  notes: string | null
+  profiles?: { name: string; email: string }
+}
 
-  const fetchGuards = useCallback(async () => {
-    setLoading(true)
+// ── Shared Zustand store ──────────────────────────────────
+// All admin pages share this single cache. Data is fetched once
+// and reused until stale (30s) or a realtime event arrives.
 
-    // Fetch all guard profiles
+const STALE_MS = 30_000 // consider data stale after 30s
+
+interface GuardsStore {
+  guards: GuardWithStatus[]
+  guardsLoading: boolean
+  guardsFetchedAt: number
+
+  allRecords: AttendanceWithProfile[]
+  recordsLoading: boolean
+  recordsFetchedAt: number
+
+  fetchGuards: (force?: boolean) => Promise<void>
+  fetchAllAttendance: (guardId?: string, startDate?: string, endDate?: string) => Promise<void>
+
+  // realtime subscription management
+  _realtimeSetup: boolean
+  _setupRealtime: () => void
+}
+
+const useGuardsStore = create<GuardsStore>((set, get) => ({
+  guards: [],
+  guardsLoading: true,
+  guardsFetchedAt: 0,
+
+  allRecords: [],
+  recordsLoading: true,
+  recordsFetchedAt: 0,
+
+  _realtimeSetup: false,
+
+  fetchGuards: async (force = false) => {
+    const { guardsFetchedAt, guardsLoading } = get()
+    const now = Date.now()
+
+    // Skip if fresh data exists and not forced
+    if (!force && guardsFetchedAt > 0 && now - guardsFetchedAt < STALE_MS) return
+    // Skip if already fetching (unless forced — e.g. realtime)
+    if (!force && guardsLoading && guardsFetchedAt === 0) return
+
+    // Only show loading spinner on initial load
+    if (guardsFetchedAt === 0) set({ guardsLoading: true })
+
     const { data: profiles } = await supabase
       .from('profiles')
       .select('*')
       .eq('role', 'guard')
       .order('name')
 
-    if (!profiles) { setLoading(false); return }
+    if (!profiles) { set({ guardsLoading: false }); return }
 
-    // Fetch attendance records for the last 31 days (enough for monthly calc)
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 31)
     const { data: attendance } = await supabase
@@ -53,17 +105,15 @@ export function useGuards() {
       .gte('check_in', thirtyDaysAgo.toISOString())
       .order('check_in', { ascending: false })
 
-    const now = new Date()
-    const startOfWeek = new Date(now)
-    startOfWeek.setDate(now.getDate() - now.getDay())
+    const now2 = new Date()
+    const startOfWeek = new Date(now2)
+    startOfWeek.setDate(now2.getDate() - now2.getDay())
     startOfWeek.setHours(0, 0, 0, 0)
-
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const startOfMonth = new Date(now2.getFullYear(), now2.getMonth(), 1)
 
     const guardsWithStatus: GuardWithStatus[] = profiles.map((guard) => {
       const guardAttendance = (attendance || []).filter(a => a.guard_id === guard.id)
 
-      // Current active session (checked in, not checked out, today)
       const activeSession = guardAttendance.find(a => {
         if (a.check_out) return false
         const checkIn = new Date(a.check_in)
@@ -71,15 +121,12 @@ export function useGuards() {
         return checkIn.toDateString() === today.toDateString()
       })
 
-      // Last completed session
       const lastCompleted = guardAttendance.find(a => a.check_out)
 
-      // Weekly hours
       const weeklyHours = guardAttendance
         .filter(a => a.total_hours && new Date(a.check_in) >= startOfWeek)
         .reduce((sum, a) => sum + (a.total_hours || 0), 0)
 
-      // Monthly hours
       const monthlyHours = guardAttendance
         .filter(a => a.total_hours && new Date(a.check_in) >= startOfMonth)
         .reduce((sum, a) => sum + (a.total_hours || 0), 0)
@@ -104,37 +151,19 @@ export function useGuards() {
       }
     })
 
-    setGuards(guardsWithStatus)
-    setLoading(false)
-  }, [])
+    set({ guards: guardsWithStatus, guardsLoading: false, guardsFetchedAt: Date.now() })
+  },
 
-  useEffect(() => {
-    fetchGuards()
-  }, [fetchGuards])
+  fetchAllAttendance: async (guardId?: string, startDate?: string, endDate?: string) => {
+    const { recordsFetchedAt } = get()
+    const isFiltered = !!(guardId || startDate || endDate)
 
-  return { guards, loading, refetch: fetchGuards }
-}
+    // Skip if unfiltered + fresh cache
+    if (!isFiltered && recordsFetchedAt > 0 && Date.now() - recordsFetchedAt < STALE_MS) return
 
-interface AttendanceWithProfile {
-  id: string
-  guard_id: string
-  check_in: string
-  check_out: string | null
-  check_in_lat: number | null
-  check_in_lng: number | null
-  check_out_lat: number | null
-  check_out_lng: number | null
-  total_hours: number | null
-  notes: string | null
-  profiles?: { name: string; email: string }
-}
+    // Only show loading on initial load or filtered queries
+    if (recordsFetchedAt === 0 || isFiltered) set({ recordsLoading: true })
 
-export function useAllAttendance() {
-  const [records, setRecords] = useState<AttendanceWithProfile[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const fetchAll = useCallback(async (guardId?: string, startDate?: string, endDate?: string) => {
-    setLoading(true)
     let query = supabase
       .from('attendance')
       .select('*, profiles!attendance_guard_id_fkey(name, email)')
@@ -146,13 +175,50 @@ export function useAllAttendance() {
     if (endDate) query = query.lte('check_in', endDate + 'T23:59:59')
 
     const { data } = await query
-    setRecords(data || [])
-    setLoading(false)
-  }, [])
+    set({ allRecords: data || [], recordsLoading: false, recordsFetchedAt: Date.now() })
+  },
+
+  _setupRealtime: () => {
+    if (get()._realtimeSetup) return
+    set({ _realtimeSetup: true })
+
+    supabase
+      .channel('realtime-attendance-global')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => {
+          // Silently refresh both caches
+          get().fetchGuards(true)
+          get().fetchAllAttendance()
+        }
+      )
+      .subscribe()
+  },
+}))
+
+
+// ── Hook wrappers (drop-in replacements) ──────────────────
+
+export function useGuards() {
+  const { guards, guardsLoading: loading, fetchGuards, _setupRealtime } = useGuardsStore()
 
   useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
+    fetchGuards()
+    _setupRealtime()
+  }, [fetchGuards, _setupRealtime])
 
-  return { records, loading, fetchAll }
+  const refetch = useCallback(() => fetchGuards(true), [fetchGuards])
+
+  return { guards, loading, refetch }
+}
+
+export function useAllAttendance() {
+  const { allRecords: records, recordsLoading: loading, fetchAllAttendance } = useGuardsStore()
+
+  useEffect(() => {
+    fetchAllAttendance()
+  }, [fetchAllAttendance])
+
+  return { records, loading, fetchAll: fetchAllAttendance }
 }

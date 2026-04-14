@@ -1,17 +1,10 @@
-import { useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useGuards } from '@/hooks/use-guards'
-import { useRealtime } from '@/hooks/use-realtime'
 import { StatsCards } from '@/components/admin/stats-cards'
 import { GuardList } from '@/components/admin/guard-list'
 
 export default function AdminDashboard() {
-  const { guards, loading, refetch } = useGuards()
-
-  // Realtime subscription — refetch on any attendance change
-  const handleRealtimeUpdate = useCallback(() => {
-    refetch()
-  }, [refetch])
-  useRealtime('attendance', handleRealtimeUpdate)
+  const { guards, loading } = useGuards()
 
   const stats = useMemo(() => {
     const activeGuards = guards.filter(g => g.status === 'active')

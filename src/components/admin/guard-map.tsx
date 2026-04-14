@@ -77,17 +77,18 @@ export function GuardMap({ guards }: GuardMapProps) {
       }
     })
 
-    // Delay fitBounds to let the container fully render
-    setTimeout(() => {
+    // Leaflet needs the container to be fully laid out before sizing tiles
+    map.invalidateSize()
+    requestAnimationFrame(() => {
+      map.invalidateSize()
       if (bounds.length > 0) {
         try {
-          map.invalidateSize()
           map.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [50, 50] })
         } catch {
           // ignore resize errors
         }
       }
-    }, 100)
+    })
 
     return () => {
       map.remove()
@@ -107,7 +108,7 @@ export function GuardMap({ guards }: GuardMapProps) {
             <span className="text-muted-foreground">Active — on duty</span>
           </div>
         </div>
-        <div ref={mapRef} className="h-[500px] rounded-lg overflow-hidden" />
+        <div ref={mapRef} className="h-[calc(100vh-380px)] min-h-[250px] max-h-[600px] rounded-lg overflow-hidden" />
       </CardContent>
     </Card>
   )
