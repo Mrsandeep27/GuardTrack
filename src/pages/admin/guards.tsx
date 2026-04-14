@@ -201,56 +201,37 @@ export default function AdminGuards() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-2 font-medium">Name</th>
-                    <th className="text-left py-3 px-2 font-medium">Status</th>
-                    <th className="text-left py-3 px-2 font-medium hidden sm:table-cell">Phone</th>
-                    <th className="text-left py-3 px-2 font-medium">Weekly</th>
-                    <th className="text-left py-3 px-2 font-medium">Monthly</th>
-                    <th className="text-right py-3 px-2 font-medium">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeGuards.map((guard) => (
-                    <tr key={guard.id} className="border-b border-border/50 hover:bg-accent/50">
-                      <td className="py-3 px-2">
-                        <div>
-                          <p className="font-medium">{guard.name}</p>
-                          <p className="text-xs text-muted-foreground">{guard.email}</p>
-                        </div>
-                      </td>
-                      <td className="py-3 px-2">
-                        <Badge variant={guard.status === 'active' ? 'success' : 'danger'}>
-                          {guard.status === 'active' ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-2 hidden sm:table-cell text-muted-foreground">
-                        {guard.phone || '--'}
-                      </td>
-                      <td className="py-3 px-2">{formatHours(guard.weekly_hours)}</td>
-                      <td className="py-3 px-2">{formatHours(guard.monthly_hours)}</td>
-                      <td className="py-3 px-2 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                          onClick={() => setShowConfirm({ id: guard.id, name: guard.name })}
-                          disabled={deleting === guard.id}
-                        >
-                          {deleting === guard.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {activeGuards.map((guard) => (
+                <div key={guard.id} className="flex items-center justify-between py-3 px-4 rounded-lg bg-accent/50">
+                  <div className="flex-1 min-w-0 mr-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium truncate">{guard.name}</p>
+                      <Badge variant={guard.status === 'active' ? 'success' : 'danger'} className="shrink-0">
+                        {guard.status === 'active' ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{guard.email}{guard.phone ? ` · ${guard.phone}` : ''}</p>
+                    <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                      <span>Week: <span className="text-foreground font-medium">{formatHours(guard.weekly_hours)}</span></span>
+                      <span>Month: <span className="text-foreground font-medium">{formatHours(guard.monthly_hours)}</span></span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    onClick={() => setShowConfirm({ id: guard.id, name: guard.name })}
+                    disabled={deleting === guard.id}
+                  >
+                    {deleting === guard.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
