@@ -51,19 +51,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) {
         console.error('getSession error:', error.message)
-      }
-
-      if (session?.user) {
+        // Bad session — clear it
+        await supabase.auth.signOut()
+        set({ user: null, profile: null })
+      } else if (session?.user) {
         const profile = await fetchProfile(session.user.id)
-        set({ user: session.user, profile })
+
+        if (!profile) {
+          // Session exists but can't fetch profile — token is dead/expired
+          console.error('Session exists but profile fetch failed — clearing stale session')
+          await supabase.auth.signOut()
+          set({ user: null, profile: null })
+        } else {
+          set({ user: session.user, profile })
+        }
       }
     } catch (err) {
       console.error('Auth init error:', err)
+      // On any error, clear everything
+      await supabase.auth.signOut().catch(() => {})
+      set({ user: null, profile: null })
     } finally {
       set({ loading: false, initialized: true })
     }
 
-    // Listen for future auth changes (login/logout from other tabs, token refresh)
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const profile = await fetchProfile(session.user.id)
