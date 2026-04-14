@@ -104,11 +104,7 @@ export function GuardMap({ guards }: GuardMapProps) {
         <div className="flex gap-4 mb-3 text-sm">
           <div className="flex items-center gap-1">
             <div className="h-3 w-3 rounded-full bg-green-500" />
-            <span className="text-muted-foreground">Active</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 rounded-full bg-red-500" />
-            <span className="text-muted-foreground">Inactive</span>
+            <span className="text-muted-foreground">Active — on duty</span>
           </div>
         </div>
         <div ref={mapRef} className="h-[500px] rounded-lg overflow-hidden" />
