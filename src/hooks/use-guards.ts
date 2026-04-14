@@ -61,6 +61,10 @@ interface GuardsStore {
   fetchGuards: (force?: boolean) => Promise<void>
   fetchAllAttendance: (guardId?: string, startDate?: string, endDate?: string) => Promise<void>
 
+  // internal fetch deduplication
+  _guardsFetching: boolean
+  _recordsFetching: boolean
+
   // realtime subscription management
   _realtimeSetup: boolean
   _setupRealtime: () => void
@@ -77,105 +81,126 @@ const useGuardsStore = create<GuardsStore>((set, get) => ({
 
   _realtimeSetup: false,
 
+  _guardsFetching: false,
+  _recordsFetching: false,
+
   fetchGuards: async (force = false) => {
-    const { guardsFetchedAt, guardsLoading } = get()
+    const { guardsFetchedAt, _guardsFetching } = get()
     const now = Date.now()
 
     // Skip if fresh data exists and not forced
     if (!force && guardsFetchedAt > 0 && now - guardsFetchedAt < STALE_MS) return
     // Skip if already fetching (unless forced — e.g. realtime)
-    if (!force && guardsLoading && guardsFetchedAt === 0) return
+    if (!force && _guardsFetching) return
 
+    set({ _guardsFetching: true })
     // Only show loading spinner on initial load
     if (guardsFetchedAt === 0) set({ guardsLoading: true })
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'guard')
-      .order('name')
+    try {
+      const { data: profiles, error: profilesErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'guard')
+        .order('name')
 
-    if (!profiles) { set({ guardsLoading: false }); return }
+      if (profilesErr) console.error('Guards fetch error:', profilesErr.message)
+      if (!profiles) { set({ guardsLoading: false, _guardsFetching: false }); return }
 
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 31)
-    const { data: attendance } = await supabase
-      .from('attendance')
-      .select('*')
-      .gte('check_in', thirtyDaysAgo.toISOString())
-      .order('check_in', { ascending: false })
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 31)
+      const { data: attendance, error: attErr } = await supabase
+        .from('attendance')
+        .select('*')
+        .gte('check_in', thirtyDaysAgo.toISOString())
+        .order('check_in', { ascending: false })
 
-    const now2 = new Date()
-    const startOfWeek = new Date(now2)
-    startOfWeek.setDate(now2.getDate() - now2.getDay())
-    startOfWeek.setHours(0, 0, 0, 0)
-    const startOfMonth = new Date(now2.getFullYear(), now2.getMonth(), 1)
+      if (attErr) console.error('Attendance fetch error:', attErr.message)
 
-    const guardsWithStatus: GuardWithStatus[] = profiles.map((guard) => {
-      const guardAttendance = (attendance || []).filter(a => a.guard_id === guard.id)
+      const now2 = new Date()
+      const startOfWeek = new Date(now2)
+      startOfWeek.setDate(now2.getDate() - now2.getDay())
+      startOfWeek.setHours(0, 0, 0, 0)
+      const startOfMonth = new Date(now2.getFullYear(), now2.getMonth(), 1)
 
-      const activeSession = guardAttendance.find(a => {
-        if (a.check_out) return false
-        const checkIn = new Date(a.check_in)
-        const today = new Date()
-        return checkIn.toDateString() === today.toDateString()
+      const guardsWithStatus: GuardWithStatus[] = profiles.map((guard) => {
+        const guardAttendance = (attendance || []).filter(a => a.guard_id === guard.id)
+
+        const activeSession = guardAttendance.find(a => {
+          if (a.check_out) return false
+          const checkIn = new Date(a.check_in)
+          const today = new Date()
+          return checkIn.toDateString() === today.toDateString()
+        })
+
+        const lastCompleted = guardAttendance.find(a => a.check_out)
+
+        const weeklyHours = guardAttendance
+          .filter(a => a.total_hours && new Date(a.check_in) >= startOfWeek)
+          .reduce((sum, a) => sum + (a.total_hours || 0), 0)
+
+        const monthlyHours = guardAttendance
+          .filter(a => a.total_hours && new Date(a.check_in) >= startOfMonth)
+          .reduce((sum, a) => sum + (a.total_hours || 0), 0)
+
+        return {
+          ...guard,
+          status: activeSession ? 'active' as const : 'inactive' as const,
+          current_attendance: activeSession ? {
+            id: activeSession.id,
+            check_in: activeSession.check_in,
+            check_in_lat: activeSession.check_in_lat,
+            check_in_lng: activeSession.check_in_lng,
+          } : null,
+          last_attendance: lastCompleted ? {
+            check_out: lastCompleted.check_out,
+            check_out_lat: lastCompleted.check_out_lat,
+            check_out_lng: lastCompleted.check_out_lng,
+            total_hours: lastCompleted.total_hours,
+          } : null,
+          weekly_hours: Math.round(weeklyHours * 100) / 100,
+          monthly_hours: Math.round(monthlyHours * 100) / 100,
+        }
       })
 
-      const lastCompleted = guardAttendance.find(a => a.check_out)
-
-      const weeklyHours = guardAttendance
-        .filter(a => a.total_hours && new Date(a.check_in) >= startOfWeek)
-        .reduce((sum, a) => sum + (a.total_hours || 0), 0)
-
-      const monthlyHours = guardAttendance
-        .filter(a => a.total_hours && new Date(a.check_in) >= startOfMonth)
-        .reduce((sum, a) => sum + (a.total_hours || 0), 0)
-
-      return {
-        ...guard,
-        status: activeSession ? 'active' as const : 'inactive' as const,
-        current_attendance: activeSession ? {
-          id: activeSession.id,
-          check_in: activeSession.check_in,
-          check_in_lat: activeSession.check_in_lat,
-          check_in_lng: activeSession.check_in_lng,
-        } : null,
-        last_attendance: lastCompleted ? {
-          check_out: lastCompleted.check_out,
-          check_out_lat: lastCompleted.check_out_lat,
-          check_out_lng: lastCompleted.check_out_lng,
-          total_hours: lastCompleted.total_hours,
-        } : null,
-        weekly_hours: Math.round(weeklyHours * 100) / 100,
-        monthly_hours: Math.round(monthlyHours * 100) / 100,
-      }
-    })
-
-    set({ guards: guardsWithStatus, guardsLoading: false, guardsFetchedAt: Date.now() })
+      set({ guards: guardsWithStatus, guardsLoading: false, guardsFetchedAt: Date.now(), _guardsFetching: false })
+    } catch (err) {
+      console.error('fetchGuards failed:', err)
+      set({ guardsLoading: false, _guardsFetching: false })
+    }
   },
 
   fetchAllAttendance: async (guardId?: string, startDate?: string, endDate?: string) => {
-    const { recordsFetchedAt } = get()
+    const { recordsFetchedAt, _recordsFetching } = get()
     const isFiltered = !!(guardId || startDate || endDate)
 
     // Skip if unfiltered + fresh cache
     if (!isFiltered && recordsFetchedAt > 0 && Date.now() - recordsFetchedAt < STALE_MS) return
+    // Skip if already fetching (unless it's a new filter request)
+    if (!isFiltered && _recordsFetching) return
 
+    set({ _recordsFetching: true })
     // Only show loading on initial load or filtered queries
     if (recordsFetchedAt === 0 || isFiltered) set({ recordsLoading: true })
 
-    let query = supabase
-      .from('attendance')
-      .select('*, profiles!attendance_guard_id_fkey(name, email)')
-      .order('check_in', { ascending: false })
-      .limit(1000)
+    try {
+      let query = supabase
+        .from('attendance')
+        .select('*, profiles!attendance_guard_id_fkey(name, email)')
+        .order('check_in', { ascending: false })
+        .limit(1000)
 
-    if (guardId) query = query.eq('guard_id', guardId)
-    if (startDate) query = query.gte('check_in', startDate)
-    if (endDate) query = query.lte('check_in', endDate + 'T23:59:59')
+      if (guardId) query = query.eq('guard_id', guardId)
+      if (startDate) query = query.gte('check_in', startDate)
+      if (endDate) query = query.lte('check_in', endDate + 'T23:59:59')
 
-    const { data } = await query
-    set({ allRecords: data || [], recordsLoading: false, recordsFetchedAt: Date.now() })
+      const { data, error } = await query
+      if (error) console.error('Attendance records fetch error:', error.message)
+      set({ allRecords: data || [], recordsLoading: false, recordsFetchedAt: Date.now(), _recordsFetching: false })
+    } catch (err) {
+      console.error('fetchAllAttendance failed:', err)
+      set({ recordsLoading: false, _recordsFetching: false })
+    }
   },
 
   _setupRealtime: () => {

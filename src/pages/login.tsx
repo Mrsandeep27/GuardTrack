@@ -4,69 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-
-// Extract project ref for storage key: "https://abc.supabase.co" -> "abc"
-const PROJECT_REF = SUPABASE_URL ? new URL(SUPABASE_URL).hostname.split('.')[0] : ''
-const STORAGE_KEY = `sb-${PROJECT_REF}-auth-token`
-
-async function authenticateWithSupabase(
-  email: string,
-  password: string
-): Promise<{ session: any; role: string; error?: string }> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000) // 15s hard timeout
-
-  try {
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-      },
-      body: JSON.stringify({ email, password }),
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeout)
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      return {
-        session: null,
-        role: '',
-        error: body.error_description || body.msg || body.message || `Login failed (${res.status})`,
-      }
-    }
-
-    const data = await res.json()
-    const role = data.user?.user_metadata?.role || 'guard'
-    return { session: data, role, error: undefined }
-  } catch (err: any) {
-    clearTimeout(timeout)
-    if (err.name === 'AbortError') {
-      return { session: null, role: '', error: 'Request timed out. Check your connection.' }
-    }
-    return { session: null, role: '', error: err.message || 'Network error' }
-  }
-}
-
-function persistSession(session: any): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-      expires_at: session.expires_at,
-      expires_in: session.expires_in,
-      token_type: session.token_type,
-      user: session.user,
-    }))
-  } catch {
-    // localStorage full or blocked — session won't persist but login still works
-  }
-}
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -113,27 +51,30 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const { session, role, error: authErr } = await authenticateWithSupabase(
-      loginEmail.trim(),
-      loginPassword
-    )
+    try {
+      const { data, error: authErr } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      })
 
-    if (authErr || !session) {
-      setError(authErr || 'Login failed')
+      if (authErr || !data.session) {
+        setError(authErr?.message || 'Login failed')
+        setLoading(false)
+        busyRef.current = false
+        return
+      }
+
+      // Session is automatically persisted by the SDK
+      const role = data.user?.user_metadata?.role || 'guard'
+      const dest = role === 'admin' ? '/admin/dashboard' : '/guard/dashboard'
+      window.location.replace(dest)
+      // NOTE: setLoading(false) is intentionally NOT called here.
+      // The page is navigating away — the spinner is correct UX.
+    } catch (err: any) {
+      setError(err.message || 'Network error')
       setLoading(false)
       busyRef.current = false
-      return
     }
-
-    // Store session for the Supabase SDK to pick up on next page load
-    persistSession(session)
-
-    // Hard navigate — the auth store will read from localStorage on the new page
-    const dest = role === 'admin' ? '/admin/dashboard' : '/guard/dashboard'
-    window.location.replace(dest)
-    // NOTE: setLoading(false) is intentionally NOT called here.
-    // The page is navigating away — the spinner is correct UX (shows "working").
-    // If navigation somehow fails (should never happen), the user can refresh.
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
