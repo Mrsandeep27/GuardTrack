@@ -1,9 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useGuards } from '@/hooks/use-guards'
+import { useRealtime } from '@/hooks/use-realtime'
 import { GuardMap } from '@/components/admin/guard-map'
 
 export default function AdminMap() {
-  const { guards, loading } = useGuards()
+  const { guards, loading, refetch } = useGuards()
+
+  // Realtime: refetch when any attendance changes (check-in/check-out)
+  const handleRealtimeUpdate = useCallback(() => {
+    refetch()
+  }, [refetch])
+  useRealtime('attendance', handleRealtimeUpdate)
 
   const guardLocations = useMemo(() => {
     // Only show active (checked-in) guards on map

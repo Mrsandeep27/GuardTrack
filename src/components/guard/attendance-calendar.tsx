@@ -31,7 +31,8 @@ export function AttendanceCalendar({ records, loading }: AttendanceCalendarProps
   const recordsByDate = useMemo(() => {
     const map: Record<string, AttendanceRecord[]> = {}
     records.forEach(r => {
-      const key = new Date(r.check_in).toLocaleDateString('en-CA') // YYYY-MM-DD
+      const d = new Date(r.check_in)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       if (!map[key]) map[key] = []
       map[key].push(r)
     })
@@ -44,7 +45,8 @@ export function AttendanceCalendar({ records, loading }: AttendanceCalendarProps
     const month = currentMonth.getMonth()
     const firstDay = new Date(year, month, 1).getDay()
     const daysInMonth = new Date(year, month + 1, 0).getDate()
-    const today = new Date().toLocaleDateString('en-CA')
+    const t = new Date()
+    const today = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
 
     const days: { date: string; day: number; isToday: boolean; records: AttendanceRecord[] }[] = []
 

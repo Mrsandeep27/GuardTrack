@@ -46,6 +46,14 @@ CREATE POLICY "profiles_update"
   ON profiles FOR UPDATE
   USING (auth.uid() = id);
 
+CREATE POLICY "admins_update_profiles"
+  ON profiles FOR UPDATE
+  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
+
+CREATE POLICY "admins_delete_profiles"
+  ON profiles FOR DELETE
+  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
+
 -- Attendance policies
 CREATE POLICY "attendance_select"
   ON attendance FOR SELECT
@@ -61,6 +69,10 @@ CREATE POLICY "attendance_insert"
 CREATE POLICY "attendance_update"
   ON attendance FOR UPDATE
   USING (guard_id = auth.uid());
+
+CREATE POLICY "admins_delete_attendance"
+  ON attendance FOR DELETE
+  USING ((SELECT role FROM profiles WHERE id = auth.uid()) = 'admin');
 
 -- Enable Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE attendance;

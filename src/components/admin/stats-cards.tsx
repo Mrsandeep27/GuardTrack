@@ -5,6 +5,7 @@ import { Users, UserCheck, UserX, Clock, X } from 'lucide-react'
 import { formatTime } from '@/lib/utils'
 
 interface Guard {
+  id?: string
   name: string
   status: 'active' | 'inactive'
   current_attendance?: { check_in: string } | null
@@ -69,8 +70,8 @@ export function StatsCards({ totalGuards, activeNow, notCheckedIn, avgHoursToday
               <p className="text-sm text-muted-foreground">No guards currently checked in</p>
             ) : (
               <div className="space-y-2">
-                {activeGuards.map((g, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-green-500/10">
+                {activeGuards.map((g) => (
+                  <div key={g.id || g.name} className="flex items-center justify-between py-2 px-3 rounded-lg bg-green-500/10">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                       <span className="text-sm font-medium">{g.name}</span>
