@@ -76,6 +76,11 @@ export default function LoginPage() {
   const busyRef = useRef(false) // prevents double-fire
   const [installPrompt, setInstallPrompt] = useState<any>(null)
 
+  // Clear any stale sessions when landing on login page
+  useEffect(() => {
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+  }, [])
+
   // Capture the PWA install prompt
   useEffect(() => {
     const handler = (e: Event) => {

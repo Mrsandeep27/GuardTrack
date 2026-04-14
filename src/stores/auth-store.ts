@@ -49,26 +49,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data: { session }, error } = await supabase.auth.getSession()
 
-      if (error) {
-        console.error('getSession error:', error.message)
-        // Bad session — clear it
-        await supabase.auth.signOut()
-        set({ user: null, profile: null })
-      } else if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-
-        if (!profile) {
-          // Session exists but can't fetch profile — token is dead/expired
-          console.error('Session exists but profile fetch failed — clearing stale session')
-          await supabase.auth.signOut()
-          set({ user: null, profile: null })
-        } else {
-          set({ user: session.user, profile })
-        }
+      if (error || !session?.user) {
+        if (error) console.error('getSession error:', error.message)
+        await supabase.auth.signOut().catch(() => {})
+        set({ user: null, profile: null, loading: false, initialized: true })
+        return
       }
+
+      // Validate session is actually working by fetching profile
+      const profile = await fetchProfile(session.user.id)
+
+      if (!profile) {
+        console.error('Session invalid — clearing')
+        await supabase.auth.signOut().catch(() => {})
+        set({ user: null, profile: null, loading: false, initialized: true })
+        return
+      }
+
+      // Also verify data access works (catches corrupted tokens)
+      const { error: testErr } = await supabase.from('profiles').select('id').limit(1)
+      if (testErr) {
+        console.error('Data access failed — clearing session:', testErr.message)
+        await supabase.auth.signOut().catch(() => {})
+        set({ user: null, profile: null, loading: false, initialized: true })
+        return
+      }
+
+      set({ user: session.user, profile })
     } catch (err) {
       console.error('Auth init error:', err)
-      // On any error, clear everything
       await supabase.auth.signOut().catch(() => {})
       set({ user: null, profile: null })
     } finally {
