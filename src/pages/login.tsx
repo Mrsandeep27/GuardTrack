@@ -76,9 +76,16 @@ export default function LoginPage() {
   const busyRef = useRef(false) // prevents double-fire
   const [installPrompt, setInstallPrompt] = useState<any>(null)
 
-  // Clear any stale sessions when landing on login page
+  // Clear ALL stale Supabase sessions when landing on login page
   useEffect(() => {
-    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+    try {
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('sb-')) keysToRemove.push(key)
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k))
+    } catch {}
   }, [])
 
   // Capture the PWA install prompt
